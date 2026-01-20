@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>星辰剑影 - 竖屏武侠挂机游戏</title>
+    <!-- Tailwind CSS for rapid styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&display=swap');
+        
+        body {
+            font-family: 'Noto Serif SC', serif;
+            background-color: #0f172a;
+            color: #e2e8f0;
+            user-select: none;
+            touch-action: manipulation;
+        }
+
+        /* Smooth HP transition */
+        .health-bar {
+            transition: width 0.15s ease-out;
+        }
+
+        /* Custom scrollbar hiding */
+        .scroll-hide::-webkit-scrollbar {
+            display: none;
+        }
+
+        .btn-active:active {
+            transform: scale(0.95);
+        }
+
+        /* Attack animation */
+        @keyframes attack-shake {
+            0% { transform: translateX(0); }
+            25% { transform: translateX(12px); }
+            50% { transform: translateX(-12px); }
+            75% { transform: translateX(6px); }
+            100% { transform: translateX(0); }
+        }
+
+        .animate-attack {
+            animation: attack-shake 0.25s ease-in-out;
+        }
+
+        /* Notification messages */
+        #toast-container {
+            position: fixed;
+            top: 15%;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 100;
+            pointer-events: none;
+        }
+
+        .toast-msg {
+            background: rgba(15, 23, 42, 0.95);
+            border: 1px solid #38bdf8;
+            color: #38bdf8;
+            padding: 8px 16px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            animation: fade-in-up 1.5s forwards;
+            white-space: nowrap;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        }
+
+        @keyframes fade-in-up {
+            0% { opacity: 0; transform: translateY(10px); }
+            15% { opacity: 1; transform: translateY(0); }
+            85% { opacity: 1; }
+            100% { opacity: 0; transform: translateY(-20px); }
+        }
+
+        .nav-btn {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 6px 0;
+        }
+        
+        .skill-active {
+            border: 2px solid #fbbf24;
+            box-shadow: 0 0 10px rgba(251, 191, 36, 0.4);
+        }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden">
+
+    <div id="toast-container"></div>
+
+    <!-- Top Status Bar -->
+    <div class="p-4 bg-slate-900 border-b border-slate-700 flex justify-between items-center z-30 shadow-md">
+        <div>
+            <h1 class="text-xl font-bold text-sky-400 leading-tight">星辰剑影</h1>
+            <p class="text-[10px] text-slate-400">境界：<span id="player-realm" class="text-sky-300">凡人</span></p>
+        </div>
+        <div class="text-right">
+            <p class="text-xs">灵石: <span id="res-gold" class="text-yellow-500 font-bold">0</span></p>
+            <p class="text-xs">修为: <span id="res-exp" class="text-green-500 font-bold">0</span></p>
+        </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <div class="flex-1 overflow-y-auto p-4 space-y-4 scroll-hide relative bg-slate-950" id="main-content">
+        
+        <!-- Battle View -->
+        <div id="view-battle" class="hidden space-y-4 min-h-full">
+            <div class="flex justify-between items-center mb-2">
+                <div class="flex items-center space-x-2">
+                    <h2 class="text-sm font-bold text-slate-300" id="battle-title">状态：空闲</h2>
+                    <button onclick="toggleSpeed()" id="battle-speed-btn" class="bg-slate-800 border border-slate-600 text-sky-400 px-2 py-0.5 rounded text-[10px] font-bold">1x 倍速</button>
+                </div>
+                <button onclick="stopBattle()" id="stop-battle-btn" class="hidden bg-red-900/40 text-red-400 border border-red-800 px-3 py-1 rounded text-[10px] font-bold btn-active">停止历练</button>
+            </div>
+
+            <!-- Animated Sprites and HP bars -->
+            <div id="battle-visuals" class="hidden flex flex-col space-y-6 py-4">
+                <div class="flex flex-col items-center space-y-2">
+                    <div id="enemy-sprite" class="text-6xl transition-transform duration-100">👹</div>
+                    <div class="w-64 bg-slate-900 h-2.5 rounded-full overflow-hidden border border-slate-700">
+                        <div id="enemy-hp-bar" class="health-bar h-full bg-gradient-to-r from-red-600 to-orange-500 w-full"></div>
+                    </div>
+                    <p id="enemy-name" class="text-[10px] text-slate-400 font-bold tracking-widest uppercase"></p>
+                </div>
+                
+                <div class="flex flex-col items-center space-y-2 pt-4">
+                    <div class="w-64 bg-slate-900 h-2.5 rounded-full overflow-hidden border border-slate-700">
+                        <div id="player-hp-bar-battle" class="health-bar h-full bg-gradient-to-r from-green-600 to-emerald-400 w-full"></div>
+                    </div>
+                    <div id="player-sprite" class="text-6xl transition-transform duration-100">🗡️</div>
+                    <p class="text-[10px] text-sky-400 font-bold">阁下 (<span id="active-skill-name">基础武学</span>)</p>
+                </div>
+            </div>
+
+            <!-- Idle State UI -->
+            <div id="battle-idle-hint" class="flex flex-col items-center justify-center py-24 text-slate-600">
+                <div class="text-6xl mb-4 opacity-10">⚔️</div>
+                <p class="text-sm">长剑入鞘，此时无战</p>
+                <p class="text-[10px] mt-2">请前往“洞府”选择历练</p>
+            </div>
+
+            <!-- Battle Logs -->
+            <div id="battle-log-container" class="hidden mt-4 bg-black/50 rounded-xl p-4 border border-slate-800 h-48 overflow-y-auto text-[11px] leading-loose font-mono">
+                <div id="battle-live-log"></div>
+            </div>
+        </div>
+
+        <!-- Character Overview Panel (Hidden in Battle) -->
+        <div id="char-overview" class="bg-slate-900/80 rounded-2xl p-4 border border-slate-800 shadow-xl">
+            <div class="flex justify-between items-center mb-2">
+                <span class="text-xs font-bold text-slate-300">真元气血</span>
+                <span class="text-[10px] font-mono" id="hp-text">100 / 100</span>
+            </div>
+            <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden mb-4 border border-slate-700">
+                <div id="hp-bar" class="health-bar h-full bg-red-500 w-full"></div>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-[10px]">
+                <div class="bg-slate-800/50 p-2 rounded flex justify-between border border-slate-700/50"><span>攻击:</span> <span id="attr-atk" class="text-orange-400 font-bold">10</span></div>
+                <div class="bg-slate-800/50 p-2 rounded flex justify-between border border-slate-700/50"><span>防御:</span> <span id="attr-def" class="text-blue-400 font-bold">5</span></div>
+                <div class="bg-slate-800/50 p-2 rounded flex justify-between border border-slate-700/50"><span>功法:</span> <span id="cur-skill" class="text-yellow-500">-</span></div>
+                <div class="bg-slate-800/50 p-2 rounded flex justify-between border border-slate-700/50"><span>塔层:</span> <span id="tower-layer" class="text-purple-400 font-bold">0</span></div>
+            </div>
+        </div>
+
+        <!-- Home/Dungeon Selection View -->
+        <div id="view-home" class="space-y-4">
+            <div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl text-center space-y-2">
+                <div class="text-4xl">🧘</div>
+                <h2 class="text-lg font-bold">洞府</h2>
+                <p class="text-xs text-slate-500">世间纷扰，唯此地安宁。</p>
+            </div>
+            <h3 class="text-xs text-slate-500 font-bold flex items-center"><span class="w-1 h-3 bg-sky-500 mr-2"></span>选择历练地点</h3>
+            <div id="dungeon-list" class="grid gap-2"></div>
+        </div>
+
+        <!-- Shop View -->
+        <div id="view-shop" class="hidden space-y-4">
+            <h3 class="text-xs text-slate-500 font-bold flex items-center"><span class="w-1 h-3 bg-yellow-500 mr-2"></span>坊市交易</h3>
+            <div id="shop-list" class="grid gap-3"></div>
+        </div>
+
+        <!-- Skills/Martial Arts Selection View -->
+        <div id="view-skills" class="hidden space-y-4">
+            <h3 class="text-xs text-slate-500 font-bold flex items-center"><span class="w-1 h-3 bg-orange-500 mr-2"></span>功法典籍</h3>
+            <div id="skills-list" class="grid gap-3"></div>
+        </div>
+
+        <!-- Star Tower View -->
+        <div id="view-tower" class="hidden flex flex-col items-center justify-center py-10 space-y-6">
+            <div class="w-full bg-gradient-to-b from-indigo-900/50 to-slate-900 p-8 rounded-3xl border border-indigo-500/30 text-center shadow-2xl">
+                <h3 class="text-xl font-bold text-indigo-300">星辰塔</h3>
+                <p class="text-[10px] text-indigo-400/70 mt-1 uppercase tracking-tighter">Automatic Ascension</p>
+                <div class="my-8 text-5xl font-black text-white" id="tower-display">1</div>
+                <button id="tower-start-btn" onclick="startTower()" class="w-full bg-indigo-600 hover:bg-indigo-500 py-3 rounded-xl text-sm font-bold shadow-lg transition btn-active">
+                    开启自动爬塔历练
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Navigation Bar -->
+    <div class="bg-slate-900 border-t border-slate-800 flex justify-around items-center z-30 pb-2">
+        <button onclick="switchView('home')" id="nav-home" class="nav-btn text-sky-400">
+            <span class="text-xl">🏡</span><span class="text-[9px] mt-1">洞府</span>
+        </button>
+        <button onclick="switchView('battle')" id="nav-battle" class="nav-btn text-slate-400">
+            <span class="text-xl">⚔️</span><span class="text-[9px] mt-1">战斗</span>
+        </button>
+        <button onclick="switchView('skills')" id="nav-skills" class="nav-btn text-slate-400">
+            <span class="text-xl">📖</span><span class="text-[9px] mt-1">功法</span>
+        </button>
+        <button onclick="switchView('tower')" id="nav-tower" class="nav-btn text-slate-400">
+            <span class="text-xl">🗼</span><span class="text-[9px] mt-1">星辰塔</span>
+        </button>
+        <button onclick="switchView('shop')" id="nav-shop" class="nav-btn text-slate-400">
+            <span class="text-xl">💰</span><span class="text-[9px] mt-1">坊市</span>
+        </button>
+        <button onclick="upgradePlayer()" class="nav-btn text-slate-400 border-l border-slate-800 ml-1">
+            <span class="text-xl">🧘</span><span class="text-[9px] mt-1">突破</span>
+        </button>
+    </div>
+
+    <script>
+        // --- Core Game State ---
+        const state = {
+            player: {
+                hp: 100, maxHp: 100, atk: 15, def: 5, crit: 0.05,
+                exp: 0, gold: 0, towerLayer: 1, realmIndex: 0,
+                unlockedSpeeds: [1, 2],
+                currentSpeed: 1,
+                ownedSkills: [], 
+                activeSkillId: null 
+            },
+            currentEnemy: null,
+            currentDungeon: null,
+            isTowerMode: false,
+            mode: 'home',
+            isFighting: false,
+            lastTick: 0
+        };
+
+        const realms = ["凡人", "炼气", "筑基", "金丹", "元婴", "化神", "合体", "大乘", "渡劫"];
+        
+        // --- Database & Libraries ---
+        const skills = {
+            'dg9j': { name: "独孤九剑", desc: "破尽天下武学。暴击+25%", bonus: { crit: 0.25 }, style: "剑气" },
+            'myc': { name: "明月策", desc: "心如月华照古潭。防御+50%，回血+2%", bonus: { defMult: 1.5, regen: 0.02 }, style: "幻影" },
+            'gqdn': { name: "乾坤大挪移", desc: "斗转星移，借力打力。全属性+20%", bonus: { all: 1.2 }, style: "霸道" }
+        };
+
+        const dungeons = [
+            { id: 1, name: "青牛镇郊", minAtk: 0, exp: 5, gold: 20, enemyName: "野狼", emoji: "🐺" },
+            { id: 2, name: "黑风山脉", minAtk: 100, exp: 30, gold: 150, enemyName: "山匪", emoji: "🥷" },
+            { id: 3, name: "幽冥鬼冢", minAtk: 600, exp: 120, gold: 800, enemyName: "煞鬼", emoji: "🧟" },
+            { id: 4, name: "九幽深渊", minAtk: 2500, exp: 500, gold: 3500, enemyName: "深渊蛟", emoji: "🐲" }
+        ];
+
+        const shopItems = [
+            { id: 1, name: "玄铁重剑", cost: 100, type: "atk", value: 15, desc: "攻击+15", stackable: true },
+            { id: 2, name: "金蚕丝甲", cost: 100, type: "def", value: 10, desc: "防御+10", stackable: true },
+            { id: 'dg9j', name: "秘籍：独孤九剑", cost: 2000, type: "skill", desc: "极致凌厉，看穿破绽", stackable: false },
+            { id: 'myc', name: "秘籍：明月策", cost: 5000, type: "skill", desc: "静水流深，气息绵长", stackable: false },
+            { id: 'gqdn', name: "秘籍：乾坤大挪移", cost: 15000, type: "skill", desc: "扭转阴阳，掌控天地", stackable: false },
+            { id: 103, name: "时间法则[三倍]", cost: 3000, type: "speed", value: 3, desc: "解锁3x倍速", stackable: false },
+            { id: 105, name: "时间法则[五倍]", cost: 20000, type: "speed", value: 5, desc: "解锁5x倍速", stackable: false }
+        ];
+
+        const moveLib = {
+            general: [
+                ["黑虎掏心", "白蛇吐信", "双峰贯耳", "一记直拳"],
+                ["劈空掌", "八卦步", "回风拂柳", "落英神剑"],
+                ["天外飞仙", "万剑归宗", "破碎虚空", "真元爆发"]
+            ],
+            dg9j: ["总诀式", "破剑式", "破刀式", "破枪式", "破鞭式", "破索式", "破掌式", "破箭式", "破气式", "独孤求败"],
+            myc: ["月升沧海", "寒潭映月", "流光暗度", "清辉万里", "月落星沉", "明月心经", "潮汐渐起", "月影阑珊", "月华满天", "广寒霜降"],
+            gqdn: ["九阳初现", "乾坤挪移", "移宫换位", "化劲入微", "反弹归元", "天地共鸣", "斗转星移", "阴阳倒错", "造化真元", "乾坤一掷"]
+        };
+
+        const enemyMoves = ["狰狞一击", "疯狂撕咬", "致命冲撞", "魔气缠绕", "毒雾喷吐", "神识威压"];
+
+        // --- Initialization ---
+        function init() {
+            renderDungeons();
+            renderShop();
+            renderSkills();
+            updateUI();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // --- UI Utils ---
+        function showToast(msg) {
+            const container = document.getElementById('toast-container');
+            const div = document.createElement('div');
+            div.className = 'toast-msg text-xs font-bold';
+            div.innerText = msg;
+            container.appendChild(div);
+            setTimeout(() => div.remove(), 1500);
+        }
+
+        function toggleSpeed() {
+            const unlocked = state.player.unlockedSpeeds;
+            let idx = unlocked.indexOf(state.player.currentSpeed);
+            state.player.currentSpeed = unlocked[(idx + 1) % unlocked.length];
+            document.getElementById('battle-speed-btn').innerText = state.player.currentSpeed + 'x 倍速';
+            showToast(`速度：${state.player.currentSpeed}x`);
+        }
+
+        function switchView(view) {
+            state.mode = view;
+            ['home', 'tower', 'shop', 'battle', 'skills'].forEach(v => {
+                const el = document.getElementById(`view-${v}`);
+                if (el) el.classList.toggle('hidden', view !== v);
+                const nav = document.getElementById(`nav-${v}`);
+                if (nav) nav.classList.toggle('text-sky-400', view === v);
+                if (nav) nav.classList.toggle('text-slate-400', view !== v);
+            });
+            document.getElementById('char-overview').classList.toggle('hidden', view === 'battle');
+            if (view === 'battle') updateBattleUI();
+            if (view === 'skills') renderSkills();
+        }
+
+        // --- Rendering Logic ---
+        function renderDungeons() {
+            const list = document.getElementById('dungeon-list');
+            list.innerHTML = dungeons.map(d => `
+                <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl flex justify-between items-center transition active:border-sky-500">
+                    <div>
+                        <div class="text-sm font-bold text-slate-200">${d.emoji} ${d.name}</div>
+                        <div class="text-[9px] text-slate-500">产出：灵石 / 修为</div>
+                    </div>
+                    <button onclick="startExplore(${d.id})" class="bg-sky-700/80 px-4 py-2 rounded-lg text-[10px] font-black btn-active">历练</button>
+                </div>
+            `).join('');
+        }
+
+        function renderShop() {
+            const list = document.getElementById('shop-list');
+            list.innerHTML = shopItems.map(item => {
+                const isSkill = item.type === 'skill';
+                const isSpeed = item.type === 'speed';
+                const alreadyOwned = (isSkill && state.player.ownedSkills.includes(item.id)) || (isSpeed && state.player.unlockedSpeeds.includes(item.value));
+
+                return `
+                <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl space-y-3">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <div class="text-sm font-bold ${isSkill ? 'text-orange-400' : 'text-yellow-500'}">${item.name}</div>
+                            <p class="text-[10px] text-slate-500">${item.desc}</p>
+                        </div>
+                        <span class="text-xs font-bold text-yellow-600">${item.cost}</span>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        ${item.stackable ? `
+                            <input type="number" id="buy-qty-${item.id}" value="1" min="1" class="w-16 bg-slate-950 border border-slate-700 rounded p-1 text-center text-xs outline-none focus:border-yellow-500">
+                        ` : ''}
+                        <button onclick="buyItem('${item.id}')" ${alreadyOwned ? 'disabled' : ''} class="flex-1 ${alreadyOwned ? 'bg-slate-800 text-slate-600' : 'bg-yellow-700 text-white'} py-2 rounded-lg text-xs font-bold btn-active">
+                            ${alreadyOwned ? '已获得' : '购买'}
+                        </button>
+                    </div>
+                </div>
+            `}).join('');
+        }
+
+        function renderSkills() {
+            const list = document.getElementById('skills-list');
+            if (state.player.ownedSkills.length === 0) {
+                list.innerHTML = `<div class="text-center py-10 text-slate-600 text-xs italic">尚未习得任何功法，请前往坊市购买。</div>`;
+                return;
+            }
+            list.innerHTML = state.player.ownedSkills.map(sid => {
+                const s = skills[sid];
+                const isActive = state.player.activeSkillId === sid;
+                return `
+                    <div class="bg-slate-900 border ${isActive ? 'border-yellow-500 skill-active' : 'border-slate-800'} p-4 rounded-xl flex justify-between items-center">
+                        <div>
+                            <div class="text-sm font-bold text-orange-400">${s.name}</div>
+                            <p class="text-[10px] text-slate-500 mt-1">${s.desc}</p>
+                        </div>
+                        <button onclick="activateSkill('${sid}')" class="${isActive ? 'bg-green-700' : 'bg-slate-700'} px-4 py-2 rounded-lg text-[10px] font-bold btn-active">
+                            ${isActive ? '运行中' : '激活'}
+                        </button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // --- Player Actions ---
+        function activateSkill(sid) {
+            state.player.activeSkillId = sid;
+            showToast(`已成功转运：${skills[sid].name}`);
+            renderSkills();
+            updateUI();
+        }
+
+        function buyItem(id) {
+            const item = shopItems.find(i => i.id == id);
+            let qty = 1;
+            if (item.stackable) {
+                qty = parseInt(document.getElementById(`buy-qty-${id}`).value) || 1;
+            }
+            const total = item.cost * qty;
+
+            if (state.player.gold >= total) {
+                state.player.gold -= total;
+                if (item.type === 'atk') state.player.atk += item.value * qty;
+                if (item.type === 'def') state.player.def += item.value * qty;
+                if (item.type === 'speed') {
+                    if (!state.player.unlockedSpeeds.includes(item.value)) state.player.unlockedSpeeds.push(item.value);
+                    state.player.unlockedSpeeds.sort((a,b)=>a-b);
+                }
+                if (item.type === 'skill') state.player.ownedSkills.push(item.id);
+                
+                showToast(`获得：${item.name}`);
+                renderShop();
+                updateUI();
+            } else {
+                showToast("灵石不足");
+            }
+        }
+
+        function upgradePlayer() {
+            const cost = Math.pow(state.player.realmIndex + 1, 3.5) * 80;
+            if(state.player.exp >= cost) {
+                state.player.exp -= cost;
+                state.player.realmIndex++;
+                state.player.maxHp += 200;
+                state.player.hp = state.player.maxHp;
+                state.player.atk += 50;
+                state.player.def += 25;
+                showToast(`突破成功！晋升至：${realms[state.player.realmIndex]}`);
+                updateUI();
+            } else {
+                showToast(`修为不足，仍需 ${Math.ceil(cost - state.player.exp)}`);
+            }
+        }
+
+        // --- Core UI Updates ---
+        function updateUI() {
+            const p = state.player;
+            document.getElementById('player-realm').innerText = realms[p.realmIndex];
+            document.getElementById('res-gold').innerText = Math.floor(p.gold);
+            document.getElementById('res-exp').innerText = Math.floor(p.exp);
+            document.getElementById('attr-atk').innerText = p.atk;
+            document.getElementById('attr-def').innerText = p.def;
+            document.getElementById('tower-layer').innerText = p.towerLayer;
+            document.getElementById('tower-display').innerText = p.towerLayer;
+            
+            const skillName = p.activeSkillId ? skills[p.activeSkillId].name : "基础武学";
+            document.getElementById('cur-skill').innerText = skillName;
+            document.getElementById('active-skill-name').innerText = skillName;
+
+            const hpPercent = (p.hp / p.maxHp) * 100;
+            document.getElementById('hp-bar').style.width = hpPercent + '%';
+            document.getElementById('hp-text').innerText = `${Math.ceil(p.hp)} / ${p.maxHp}`;
+            
+            if (state.mode === 'battle') {
+                document.getElementById('player-hp-bar-battle').style.width = hpPercent + '%';
+                if (state.currentEnemy) {
+                    // FIX: If enemy is dead, force bar to zero immediately to prevent visual ghosting
+                    const eHp = state.currentEnemy.hp <= 0 ? 0 : state.currentEnemy.hp;
+                    const eHpPercent = (eHp / state.currentEnemy.maxHp) * 100;
+                    document.getElementById('enemy-hp-bar').style.width = eHpPercent + '%';
+                } else {
+                    document.getElementById('enemy-hp-bar').style.width = '0%';
+                }
+            }
+            
+            const towerBtn = document.getElementById('tower-start-btn');
+            if (towerBtn) towerBtn.innerText = (state.isFighting && state.isTowerMode) ? "正在攀登..." : "开启自动爬塔历练";
+        }
+
+        function updateBattleUI() {
+            const f = state.isFighting;
+            document.getElementById('battle-visuals').classList.toggle('hidden', !f);
+            document.getElementById('battle-log-container').classList.toggle('hidden', !f);
+            document.getElementById('battle-idle-hint').classList.toggle('hidden', f);
+            document.getElementById('stop-battle-btn').classList.toggle('hidden', !f);
+            
+            const titleEl = document.getElementById('battle-title');
+            if (f) {
+                titleEl.innerText = state.isTowerMode ? `星辰塔：第 ${state.player.towerLayer} 层` : `历练中：${state.currentDungeon.name}`;
+            } else {
+                titleEl.innerText = "状态：空闲";
+            }
+        }
+
+        // --- Battle Logic ---
+        function startExplore(id) {
+            state.currentDungeon = dungeons.find(x => x.id === id);
+            state.isTowerMode = false;
+            state.isFighting = true;
+            state.currentEnemy = null;
+            switchView('battle');
+            logBattle(`踏入 ${state.currentDungeon.name}，周身灵气荡漾...`, 'info');
+        }
+
+        function startTower() {
+            state.isFighting = true;
+            state.isTowerMode = true;
+            state.currentEnemy = null;
+            switchView('battle');
+        }
+
+        function stopBattle() {
+            state.isFighting = false;
+            state.currentEnemy = null;
+            state.isTowerMode = false;
+            updateUI();
+            updateBattleUI();
+        }
+
+        function spawnEnemy() {
+            if (state.isTowerMode) {
+                const layer = state.player.towerLayer;
+                const mul = Math.pow(1.15, layer - 1);
+                state.currentEnemy = {
+                    name: `天道影子-阶${layer}`,
+                    hp: 120 * mul, maxHp: 120 * mul,
+                    atk: 18 * mul, def: 8 * mul, emoji: "🔮"
+                };
+            } else {
+                const d = state.currentDungeon;
+                state.currentEnemy = {
+                    name: d.enemyName,
+                    hp: d.minAtk + 100, maxHp: d.minAtk + 100,
+                    atk: d.minAtk / 2 + 10, def: d.minAtk / 4 + 2, emoji: d.emoji
+                };
+            }
+            document.getElementById('enemy-name').innerText = state.currentEnemy.name;
+            document.getElementById('enemy-sprite').innerText = state.currentEnemy.emoji;
+            updateUI(); // Immediate sync
+        }
+
+        function logBattle(msg, type = 'normal') {
+            const logEl = document.getElementById('battle-live-log');
+            if (!logEl) return;
+            const p = document.createElement('p');
+            if(type === 'reward') p.className = 'text-yellow-400 font-bold';
+            if(type === 'danger') p.className = 'text-red-400 font-bold';
+            if(type === 'info') p.className = 'text-sky-300 italic';
+            if(type === 'move') p.className = 'text-emerald-300';
+            p.innerText = `· ${msg}`;
+            logEl.prepend(p);
+            if(logEl.children.length > 25) logEl.lastChild.remove();
+        }
+
+        function getMoveDesc() {
+            const p = state.player;
+            const sid = p.activeSkillId;
+            const realmIdx = p.realmIndex;
+            
+            if (sid && moveLib[sid]) {
+                const moves = moveLib[sid];
+                const maxMove = Math.min(moves.length - 1, realmIdx);
+                const randomMoveIdx = Math.floor(Math.random() * (maxMove + 1));
+                return moves[randomMoveIdx];
+            } else {
+                const group = realmIdx < 2 ? 0 : (realmIdx < 5 ? 1 : 2);
+                const moves = moveLib.general[group];
+                return moves[Math.floor(Math.random() * moves.length)];
+            }
+        }
+
+        function executeBattleTick() {
+            const enemy = state.currentEnemy;
+            const p = state.player;
+            
+            // Calc stats with buffs
+            let bonusAtk = p.atk;
+            let bonusDef = p.def;
+            let bonusCrit = p.crit;
+
+            if (p.activeSkillId === 'dg9j') bonusCrit += 0.25;
+            if (p.activeSkillId === 'myc') bonusDef *= 1.5;
+            if (p.activeSkillId === 'gqdn') { bonusAtk *= 1.2; bonusDef *= 1.2; }
+
+            // Player Turn
+            const pSprite = document.getElementById('player-sprite');
+            pSprite.classList.add('animate-attack');
+            setTimeout(() => pSprite.classList.remove('animate-attack'), 200);
+
+            const move = getMoveDesc();
+            let isCrit = Math.random() < bonusCrit;
+            let dmg = Math.max(1, bonusAtk * (isCrit ? 2.5 : 1) - enemy.def);
+            enemy.hp -= dmg;
+            
+            logBattle(`施展「${move}」，造成 ${dmg.toFixed(0)} 点伤害 ${isCrit ? '(暴击!)' : ''}`, 'move');
+
+            if (enemy.hp <= 0) {
+                enemy.hp = 0; // Fix ghosting
+                updateUI();
+                winBattle();
+                return;
+            }
+
+            // Enemy Turn
+            setTimeout(() => {
+                if(!state.currentEnemy || state.currentEnemy.hp <= 0) return;
+                const eSprite = document.getElementById('enemy-sprite');
+                eSprite.classList.add('animate-attack');
+                setTimeout(() => eSprite.classList.remove('animate-attack'), 200);
+
+                const eMove = enemyMoves[Math.floor(Math.random() * enemyMoves.length)];
+                let eDmg = Math.max(1, enemy.atk - bonusDef);
+                p.hp -= eDmg;
+                logBattle(`${enemy.name} 使用「${eMove}」，你受到 ${eDmg.toFixed(0)} 点伤害`, 'danger');
+                
+                // Lifesteal/Regen from skill
+                if (p.activeSkillId === 'myc') {
+                    const heal = p.maxHp * 0.02;
+                    p.hp = Math.min(p.maxHp, p.hp + heal);
+                    logBattle(`明月策清辉自生，恢复了 ${heal.toFixed(0)} 点血量`, 'info');
+                }
+
+                if (p.hp <= 0) {
+                    p.hp = p.maxHp * 0.1; 
+                    logBattle("不敌对手，你已重伤退却...", "info");
+                    stopBattle();
+                }
+                updateUI();
+            }, 300 / p.currentSpeed);
+        }
+
+        function winBattle() {
+            const enemy = state.currentEnemy;
+            if (state.isTowerMode) {
+                const layer = state.player.towerLayer;
+                const bonusG = Math.floor(150 * Math.pow(1.2, layer));
+                const bonusE = Math.floor(80 * Math.pow(1.2, layer));
+                state.player.gold += bonusG;
+                state.player.exp += bonusE;
+                logBattle(`斩断残影！获灵石 ${bonusG}，修为 ${bonusE}`, 'reward');
+                state.player.towerLayer++;
+            } else {
+                const d = state.currentDungeon;
+                state.player.gold += d.gold;
+                state.player.exp += d.exp;
+                logBattle(`历练大捷！获灵石 ${d.gold}，修为 ${d.exp}`, 'reward');
+            }
+            state.currentEnemy = null; // Next loop spawns new enemy
+            updateUI();
+        }
+
+        // --- Main Game Loop ---
+        function gameLoop(time) {
+            const freq = 1200 / state.player.currentSpeed;
+            if (time - state.lastTick > freq) {
+                if (state.isFighting) {
+                    if (!state.currentEnemy) spawnEnemy();
+                    else executeBattleTick();
+                } else {
+                    // Idle healing
+                    if (state.player.hp < state.player.maxHp) {
+                        state.player.hp = Math.min(state.player.maxHp, state.player.hp + state.player.maxHp * 0.05);
+                    }
+                }
+                updateUI();
+                state.lastTick = time;
+            }
+            requestAnimationFrame(gameLoop);
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
